@@ -51,7 +51,7 @@ public sealed class PurchaseLinkService : IDisposable
 
         _httpClientFactory = httpClientFactory;
         _logger = logger;
-        _cacheFile = Path.Combine(applicationPaths.CachePath, "purchase-at", "links.json");
+        _cacheFile = Path.Join(applicationPaths.CachePath, "purchase-at", "links.json");
         _cache = new ConcurrentDictionary<string, CacheEntry>(LoadCache(), StringComparer.Ordinal);
     }
 
@@ -161,22 +161,34 @@ public sealed class PurchaseLinkService : IDisposable
     {
         if (!entity.TryGetProperty("relations", out var relations) || relations.ValueKind != JsonValueKind.Array)
         {
-            yield break;
+            return [];
         }
 
-        foreach (var relation in relations.EnumerateArray())
+        return relations.EnumerateArray()
+            .Where(IsCurrentMailOrderRelation)
+            .Select(GetHttpUrl)
+            .OfType<string>();
+    }
+
+    private static bool IsCurrentMailOrderRelation(JsonElement relation)
+    {
+        return relation.TryGetProperty("type-id", out var typeId)
+            && typeId.ValueEquals(MailOrderRelationshipTypeId)
+            && !(relation.TryGetProperty("ended", out var ended) && ended.ValueKind == JsonValueKind.True);
+    }
+
+    private static string? GetHttpUrl(JsonElement relation)
+    {
+        if (relation.TryGetProperty("url", out var url)
+            && url.TryGetProperty("resource", out var resource)
+            && resource.ValueKind == JsonValueKind.String
+            && Uri.TryCreate(resource.GetString(), UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp))
         {
-            if (relation.TryGetProperty("type-id", out var typeId)
-                && typeId.ValueEquals(MailOrderRelationshipTypeId)
-                && !(relation.TryGetProperty("ended", out var ended) && ended.ValueKind == JsonValueKind.True)
-                && relation.TryGetProperty("url", out var url)
-                && url.TryGetProperty("resource", out var resource)
-                && Uri.TryCreate(resource.GetString(), UriKind.Absolute, out var uri)
-                && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp))
-            {
-                yield return uri.AbsoluteUri;
-            }
+            return uri.AbsoluteUri;
         }
+
+        return null;
     }
 
     private async Task<IReadOnlyList<string>> LookupAsync(AlbumIds ids, CancellationToken cancellationToken)
