@@ -1,0 +1,102 @@
+name: '🚀 Release Plugin'
+
+# Push a tag like v1.0.0 to build the plugin, attach it to a GitHub release
+# and add the version to manifest.json, the plugin repository Jellyfin reads.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Determine Version
+        id: version
+        run: |
+          # Jellyfin plugin versions have four parts: v1.2 -> 1.2.0.0
+          version="${GITHUB_REF_NAME#v}"
+          while [ "$(tr -cd . <<< "$version" | wc -c)" -lt 3 ]; do
+            version="$version.0"
+          done
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build Plugin
+        run: >
+          dotnet publish Jellyfin.Plugin.PurchaseAt/Jellyfin.Plugin.PurchaseAt.csproj
+          --configuration Release
+          --output publish
+          -p:Version=${{ steps.version.outputs.version }}
+          -p:AssemblyVersion=${{ steps.version.outputs.version }}
+          -p:FileVersion=${{ steps.version.outputs.version }}
+
+      - name: Package Plugin
+        id: package
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          zip="purchase-at_${VERSION}.zip"
+
+          mkdir package
+          cp publish/Jellyfin.Plugin.PurchaseAt.dll package/
+          yq -o=json build.yaml > build.json
+          jq --arg version "$VERSION" --arg timestamp "$timestamp" \
+            '{guid, name, overview, description, owner, category, targetAbi, changelog, version: $version, timestamp: $timestamp}' \
+            build.json > package/meta.json
+          (cd package && zip "../$zip" ./*)
+
+          echo "zip=$zip" >> "$GITHUB_OUTPUT"
+          echo "checksum=$(md5sum "$zip" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+          echo "timestamp=$timestamp" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$GITHUB_REF_NAME" "${{ steps.package.outputs.zip }}"
+          --title "$GITHUB_REF_NAME"
+          --generate-notes
+          --verify-tag
+
+      - name: Update Manifest
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          ZIP: ${{ steps.package.outputs.zip }}
+          CHECKSUM: ${{ steps.package.outputs.checksum }}
+          TIMESTAMP: ${{ steps.package.outputs.timestamp }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          git fetch --depth=1 origin "$DEFAULT_BRANCH"
+          git checkout -B "$DEFAULT_BRANCH" FETCH_HEAD
+
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${ZIP}"
+          jq --slurpfile build build.json \
+            --arg version "$VERSION" --arg url "$url" --arg checksum "$CHECKSUM" --arg timestamp "$TIMESTAMP" '
+            $build[0] as $b
+            | {version: $version, changelog: $b.changelog, targetAbi: $b.targetAbi, sourceUrl: $url, checksum: $checksum, timestamp: $timestamp} as $entry
+            | if any(.[]; .guid == $b.guid) then . else . + [{guid: $b.guid, versions: []}] end
+            | map(if .guid == $b.guid then
+                . + {name: $b.name, description: $b.description, overview: $b.overview, owner: $b.owner, category: $b.category}
+                | .versions = [$entry] + [.versions[] | select(.version != $version)]
+              else . end)' \
+            manifest.json > manifest.json.new
+          mv manifest.json.new manifest.json
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add manifest.json
+          git commit -m "Add version ${VERSION} to manifest"
+          git push origin "$DEFAULT_BRANCH"

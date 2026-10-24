@@ -1,0 +1,11 @@
+[
+  {
+    "guid": "afb9ac1b-16fc-4055-a2a2-8226a0ed91af",
+    "name": "Purchase At",
+    "description": "Adds a link to each album page pointing to where the album can be bought, using the MusicBrainz \"purchase for mail-order\" relationships of the album's release.\n",
+    "overview": "Link album pages to where the album can be bought",
+    "owner": "illesnagy1",
+    "category": "Metadata",
+    "versions": []
+  }
+]

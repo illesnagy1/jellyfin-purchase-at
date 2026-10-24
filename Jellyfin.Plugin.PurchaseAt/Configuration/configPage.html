@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Purchase At</title>
+</head>
+<body>
+    <div id="PurchaseAtConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox">
+        <div data-role="content">
+            <div class="content-primary">
+                <form id="PurchaseAtConfigForm">
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="LinkName">Link name</label>
+                        <input id="LinkName" name="LinkName" type="text" is="emby-input" />
+                        <div class="fieldDescription">Text of the link shown on album pages.</div>
+                    </div>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="IncludeOtherReleases" name="IncludeOtherReleases" type="checkbox" is="emby-checkbox" />
+                            <span>Use links from other releases of the album</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">When the album's own MusicBrainz release has no mail-order link, show the links of other releases in its release group, such as a vinyl or CD edition.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="CacheDays">Cache duration (days)</label>
+                        <input id="CacheDays" name="CacheDays" type="number" is="emby-input" min="1" />
+                        <div class="fieldDescription">How long links are kept before they are looked up again.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="MusicBrainzServer">MusicBrainz server</label>
+                        <input id="MusicBrainzServer" name="MusicBrainzServer" type="url" is="emby-input" />
+                        <div class="fieldDescription">Base URL of the MusicBrainz server or mirror to query.</div>
+                    </div>
+                    <div>
+                        <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+                            <span>Save</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <script type="text/javascript">
+            var PurchaseAtConfig = {
+                pluginUniqueId: 'afb9ac1b-16fc-4055-a2a2-8226a0ed91af'
+            };
+
+            document.querySelector('#PurchaseAtConfigPage')
+                .addEventListener('pageshow', function() {
+                    Dashboard.showLoadingMsg();
+                    ApiClient.getPluginConfiguration(PurchaseAtConfig.pluginUniqueId).then(function (config) {
+                        document.querySelector('#LinkName').value = config.LinkName;
+                        document.querySelector('#IncludeOtherReleases').checked = config.IncludeOtherReleases;
+                        document.querySelector('#CacheDays').value = config.CacheDays;
+                        document.querySelector('#MusicBrainzServer').value = config.MusicBrainzServer;
+                        Dashboard.hideLoadingMsg();
+                    });
+                });
+
+            document.querySelector('#PurchaseAtConfigForm')
+                .addEventListener('submit', function(e) {
+                Dashboard.showLoadingMsg();
+                ApiClient.getPluginConfiguration(PurchaseAtConfig.pluginUniqueId).then(function (config) {
+                    config.LinkName = document.querySelector('#LinkName').value;
+                    config.IncludeOtherReleases = document.querySelector('#IncludeOtherReleases').checked;
+                    config.CacheDays = document.querySelector('#CacheDays').value;
+                    config.MusicBrainzServer = document.querySelector('#MusicBrainzServer').value;
+                    ApiClient.updatePluginConfiguration(PurchaseAtConfig.pluginUniqueId, config).then(function (result) {
+                        Dashboard.processPluginConfigurationUpdateResult(result);
+                    });
+                });
+
+                e.preventDefault();
+                return false;
+            });
+        </script>
+    </div>
+</body>
+</html>
